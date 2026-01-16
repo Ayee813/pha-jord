@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../app_color.dart';
+import '../core/phapay_service.dart';
+import 'wallet_topup_page.dart';
+import 'transaction_history_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -11,6 +14,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool isLao = false;
   bool notificationsEnabled = true;
+  final PhapayService _phapayService = PhapayService();
 
   @override
   Widget build(BuildContext context) {
@@ -170,13 +174,17 @@ class _ProfilePageState extends State<ProfilePage> {
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                gradient: const LinearGradient(
+                  colors: [AppColors.primaryColor, Color(0xFF00A86B)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: AppColors.primaryColor.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -187,38 +195,92 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       const Text(
                         "Wallet Balance",
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        style: TextStyle(fontSize: 14, color: Colors.white70),
                       ),
                       GestureDetector(
-                        onTap: () {},
-                        child: const Text(
-                          "Top Up",
-                          style: TextStyle(
-                            color: AppColors.primaryColor,
-                            fontWeight: FontWeight.bold,
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const WalletTopUpPage(),
+                            ),
+                          );
+                          setState(() {}); // Refresh balance
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            "Top Up",
+                            style: TextStyle(
+                              color: AppColors.primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       const Icon(
                         Icons.account_balance_wallet,
-                        color: AppColors.textColor,
+                        color: Colors.white,
                         size: 28,
                       ),
                       const SizedBox(width: 12),
-                      const Text(
-                        "150,000 ₭",
-                        style: TextStyle(
-                          fontSize: 24,
+                      Text(
+                        "₭${_phapayService.walletBalance.toStringAsFixed(0)}",
+                        style: const TextStyle(
+                          fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.textColor,
+                          color: Colors.white,
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const TransactionHistoryPage(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            "Transaction History",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
