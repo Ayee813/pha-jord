@@ -44,18 +44,6 @@ class HistoryPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          "Parking History",
-          style: TextStyle(
-            color: AppColors.textColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.textColor),
-      ),
       body: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: historyLogs.length,

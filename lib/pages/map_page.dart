@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
-import '../app_color.dart';
+import '../../app_color.dart'; // Adjust import based on depth
+import '../../core/services/launcher_service.dart';
 
 class MapPage extends StatelessWidget {
   const MapPage({super.key});
@@ -8,6 +9,7 @@ class MapPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Mock data for parking spots
+    // Added lat/long for demo purposes (Central Plaza, Mekong, Night Market Vientiane approximation)
     final List<Map<String, dynamic>> parkingSpots = [
       {
         "name": "Central Plaza - Level B1",
@@ -16,6 +18,8 @@ class MapPage extends StatelessWidget {
         "price": 5000,
         "isAvailable": true,
         "coordinates": const Offset(100, 150),
+        "lat": 17.965,
+        "long": 102.615,
       },
       {
         "name": "Mekong Riverside Parking",
@@ -24,6 +28,8 @@ class MapPage extends StatelessWidget {
         "price": 3000,
         "isAvailable": false,
         "coordinates": const Offset(250, 300),
+        "lat": 17.962,
+        "long": 102.608,
       },
       {
         "name": "Night Market Zone A",
@@ -32,6 +38,8 @@ class MapPage extends StatelessWidget {
         "price": 2000,
         "isAvailable": true,
         "coordinates": const Offset(180, 220),
+        "lat": 17.964,
+        "long": 102.609,
       },
     ];
 
@@ -124,6 +132,7 @@ class MapPage extends StatelessWidget {
 
   Widget _buildParkingCard(Map<String, dynamic> spot) {
     bool isAvailable = spot['isAvailable'] as bool;
+    final LauncherService launcherService = LauncherService();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -229,7 +238,7 @@ class MapPage extends StatelessWidget {
               ),
               ElevatedButton(
                 onPressed: () {
-                  // Navigation action mock
+                  launcherService.openMap(spot['lat'], spot['long']);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,

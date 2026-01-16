@@ -1,18 +1,58 @@
+import 'dart:async'; // Add import for Timer
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import '../app_color.dart';
 import 'map_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Mock data for display
-    const bool isParked = true;
-    const String remainingTime = "01:45:30";
-    const String parkingLocation = "Central Plaza, Level B1, Slot A12";
+  State<HomePage> createState() => _HomePageState();
+}
 
+class _HomePageState extends State<HomePage> {
+  // Timer state
+  Timer? _timer;
+  Duration _remainingTime = const Duration(hours: 1, minutes: 45, seconds: 30);
+  final bool _isParked = true;
+  final String _parkingLocation = "Central Plaza, Level B1, Slot A12";
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isParked) {
+      _startTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingTime.inSeconds > 0) {
+        setState(() {
+          _remainingTime = _remainingTime - const Duration(seconds: 1);
+        });
+      } else {
+        _timer?.cancel();
+      }
+    });
+  }
+
+  String get _formattedTime {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    String twoDigitMinutes = twoDigits(_remainingTime.inMinutes.remainder(60));
+    String twoDigitSeconds = twoDigits(_remainingTime.inSeconds.remainder(60));
+    return "${twoDigits(_remainingTime.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       body: SingleChildScrollView(
@@ -42,7 +82,7 @@ class HomePage extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: isParked ? AppColors.primaryColor : Colors.white,
+                  color: _isParked ? AppColors.primaryColor : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
@@ -59,9 +99,9 @@ class HomePage extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          isParked ? "Currently Parked" : "Not Parked",
+                          _isParked ? "Currently Parked" : "Not Parked",
                           style: TextStyle(
-                            color: isParked
+                            color: _isParked
                                 ? Colors.white
                                 : AppColors.textColor,
                             fontSize: 18,
@@ -74,7 +114,7 @@ class HomePage extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: isParked
+                            color: _isParked
                                 ? Colors.white.withOpacity(0.2)
                                 : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(20),
@@ -82,15 +122,15 @@ class HomePage extends StatelessWidget {
                           child: Row(
                             children: [
                               Icon(
-                                isParked ? FIcons.check : FIcons.ban,
-                                color: isParked ? Colors.white : Colors.grey,
+                                _isParked ? FIcons.check : FIcons.ban,
+                                color: _isParked ? Colors.white : Colors.grey,
                                 size: 16,
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                isParked ? "Active" : "Inactive",
+                                _isParked ? "Active" : "Inactive",
                                 style: TextStyle(
-                                  color: isParked ? Colors.white : Colors.grey,
+                                  color: _isParked ? Colors.white : Colors.grey,
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -100,7 +140,7 @@ class HomePage extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (isParked) ...[
+                    if (_isParked) ...[
                       const SizedBox(height: 20),
                       // Time Display
                       const Text(
@@ -108,9 +148,9 @@ class HomePage extends StatelessWidget {
                         style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        remainingTime,
-                        style: TextStyle(
+                      Text(
+                        _formattedTime,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -152,7 +192,7 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Location Section
-              if (isParked) ...[
+              if (_isParked) ...[
                 const Text(
                   "Location",
                   style: TextStyle(
@@ -215,7 +255,7 @@ class HomePage extends StatelessWidget {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  parkingLocation,
+                                  _parkingLocation,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w500,
                                     color: AppColors.textColor,
