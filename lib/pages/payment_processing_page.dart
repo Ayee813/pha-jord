@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../app_color.dart';
 import '../core/phapay_service.dart';
+import '../core/models/phapay_bank.dart';
 
 class PaymentProcessingPage extends StatefulWidget {
   final double amount;
@@ -20,7 +22,9 @@ class PaymentProcessingPage extends StatefulWidget {
 class _PaymentProcessingPageState extends State<PaymentProcessingPage>
     with SingleTickerProviderStateMixin {
   final PhapayService _phapayService = PhapayService();
-  bool _isProcessing = true;
+  bool _isProcessing = false; // Start false to allow bank selection if needed
+
+  PhaPayBank? _selectedBank;
   PaymentResult? _result;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -35,7 +39,12 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
     _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
     );
-    _processPayment();
+
+    // If not PhaPay QR, process immediately. If PhaPay QR, wait for bank selection.
+    if (widget.paymentMethod != PaymentMethod.phapayQR) {
+      _isProcessing = true;
+      _processPayment();
+    }
   }
 
   @override
@@ -44,13 +53,24 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
     super.dispose();
   }
 
-  Future<void> _processPayment() async {
-    // Show payment process for a bit
-    await Future.delayed(const Duration(seconds: 3));
+  void _onBankSelected(PhaPayBank bank) {
+    setState(() {
+      _selectedBank = bank;
+      _isProcessing = true;
+    });
+    _processPayment();
+  }
 
+  Future<void> _processPayment() async {
+    // Show loading state
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // Create payment using PhaPay Service (defaults to QR generation now)
     final result = await _phapayService.initiatePayment(
       amount: widget.amount,
       method: widget.paymentMethod,
+      description: 'Wallet Top Up - ₭${widget.amount.toStringAsFixed(0)}',
+      bank: _selectedBank,
     );
 
     setState(() {
@@ -58,12 +78,56 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
       _result = result;
     });
 
-    _animationController.forward();
+    if (result.success && result.paymentUrl != null) {
+      if (result.isQrData) {
+        // Show QR code in-app
+        print('✅ QR Code generated successfully: ${result.paymentUrl}');
+        _animationController.forward();
+      } else {
+        // Fallback: Launch payment URL in browser (old method)
+        try {
+          final uri = Uri.parse(result.paymentUrl!);
+          print('🚀 Launching Payment URL: $uri');
 
-    // Auto navigate back after showing result
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
+          final launched = await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          );
+
+          if (launched) {
+            print('✅ Payment URL launched successfully');
+            _animationController.forward();
+            await Future.delayed(const Duration(seconds: 3));
+            if (mounted) {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            }
+          } else {
+            print('⚠️ Failed to launch payment URL');
+            setState(() {
+              _result = PaymentResult(
+                success: false,
+                message: 'Cannot open payment link in browser',
+                transactionId: result.transactionId,
+                newBalance: result.newBalance,
+              );
+            });
+            _animationController.forward();
+          }
+        } catch (e) {
+          setState(() {
+            _result = PaymentResult(
+              success: false,
+              message: 'Error opening payment link: ${e.toString()}',
+              transactionId: result.transactionId,
+              newBalance: result.newBalance,
+            );
+          });
+          _animationController.forward();
+        }
+      }
+    } else {
+      // Payment failed
+      _animationController.forward();
     }
   }
 
@@ -88,10 +152,77 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
         ),
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: _isProcessing ? _buildProcessingView() : _buildResultView(),
+          child: _isProcessing
+              ? _buildProcessingView()
+              : (_result != null
+                    ? _buildResultView()
+                    : _buildBankSelectionView()),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBankSelectionView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Select Bank Processing',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textColor,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Choose your preferred banking app',
+          style: TextStyle(fontSize: 14, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        _buildBankButton(PhaPayBank.bcel, Colors.red[700]!),
+        const SizedBox(height: 16),
+        _buildBankButton(PhaPayBank.jdb, Colors.blue[800]!),
+        const SizedBox(height: 16),
+        _buildBankButton(PhaPayBank.ldb, Colors.green[700]!),
+        const SizedBox(height: 16),
+        _buildBankButton(PhaPayBank.other, Colors.orange[700]!),
+      ],
+    );
+  }
+
+  Widget _buildBankButton(PhaPayBank bank, Color color) {
+    return ElevatedButton(
+      onPressed: () => _onBankSelected(bank),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: color, // Text/Icon color
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: color, width: 2),
+        ),
+        elevation: 0,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // You could add an Image.asset here if you had icons
+          // Image.asset(bank.logoAsset, width: 30, height: 30),
+          // const SizedBox(width: 12),
+          Text(
+            bank.displayName,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -100,7 +231,7 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Phapay Logo/Branding
+        // ... (Same header as before)
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -115,15 +246,14 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
             ],
           ),
           child: const Icon(
-            Icons.payment,
+            Icons.qr_code_scanner,
             size: 80,
             color: AppColors.primaryColor,
           ),
         ),
         const SizedBox(height: 32),
-
         const Text(
-          'Phapay',
+          'PhaPay QR',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -137,66 +267,6 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
         ),
         const SizedBox(height: 48),
 
-        // QR Code (if using QR payment)
-        if (widget.paymentMethod == PaymentMethod.phapayQR)
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: QrImageView(
-              data: _phapayService.generateQRCode(widget.amount),
-              version: QrVersions.auto,
-              size: 200.0,
-              backgroundColor: Colors.white,
-            ),
-          ),
-
-        if (widget.paymentMethod == PaymentMethod.phapayQR)
-          const SizedBox(height: 24),
-
-        // Amount
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              const Text(
-                'Amount',
-                style: TextStyle(fontSize: 14, color: Colors.grey),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '₭${widget.amount.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 32),
-
         // Processing indicator
         const SizedBox(
           width: 40,
@@ -208,31 +278,128 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
         ),
         const SizedBox(height: 16),
         const Text(
-          'Processing payment...',
+          'Generating QR Code...',
           style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
-
-        if (widget.paymentMethod == PaymentMethod.phapayQR) ...[
-          const SizedBox(height: 32),
-          const Text(
-            'Scan QR code with your banking app',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-        ],
       ],
     );
   }
 
   Widget _buildResultView() {
     final isSuccess = _result?.success ?? false;
+    final isQrData = _result?.isQrData ?? false;
+    final paymentData = _result?.paymentUrl ?? '';
 
+    if (isSuccess && isQrData && paymentData.isNotEmpty) {
+      // Show QR Code
+      return ScaleTransition(
+        scale: _scaleAnimation,
+        child: Column(
+          children: [
+            const Text(
+              'Scan to Pay',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Use your banking app to scan this QR code',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+
+            // QR Code Container
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: QrImageView(
+                data: paymentData,
+                version: QrVersions.auto,
+                size: 250,
+                gapless: false,
+                embeddedImage: const AssetImage(
+                  'assets/icons/PhaJord_icon.png',
+                ),
+                embeddedImageStyle: const QrEmbeddedImageStyle(
+                  size: Size(40, 40),
+                ),
+                errorStateBuilder: (cxt, err) {
+                  return const Center(
+                    child: Text(
+                      'Error generating QR code',
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Amount
+            Text(
+              '₭${widget.amount.toStringAsFixed(0)}',
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_result?.orderNo != null)
+              Text(
+                'Order: ${_result!.orderNo}',
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+
+            const SizedBox(height: 48),
+
+            // Done Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  'Done',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Default error/legacy success view
     return ScaleTransition(
       scale: _scaleAnimation,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Success/Error Icon
           Container(
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
@@ -248,92 +415,30 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
             ),
           ),
           const SizedBox(height: 32),
-
           Text(
-            isSuccess ? 'Payment Successful!' : 'Payment Failed',
+            isSuccess ? 'Payment Link Opened!' : 'Failed to Generate QR',
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: isSuccess ? Colors.green : Colors.red,
             ),
           ),
           const SizedBox(height: 16),
-
-          Text(
-            _result?.message ?? '',
-            style: const TextStyle(fontSize: 16, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-
-          // Transaction Details
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildDetailRow(
-                  'Amount',
-                  '₭${widget.amount.toStringAsFixed(0)}',
-                ),
-                const Divider(height: 24),
-                _buildDetailRow(
-                  'Payment Method',
-                  widget.paymentMethod.displayName,
-                ),
-                const Divider(height: 24),
-                _buildDetailRow(
-                  'Transaction ID',
-                  _result?.transactionId ?? 'N/A',
-                ),
-                if (isSuccess) ...[
-                  const Divider(height: 24),
-                  _buildDetailRow(
-                    'New Balance',
-                    '₭${_result?.newBalance.toStringAsFixed(0) ?? '0'}',
-                  ),
-                ],
-              ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _result?.message ?? 'Unknown error',
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center,
             ),
           ),
           const SizedBox(height: 32),
-
-          const Text(
-            'Redirecting...',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Go Back'),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 14, color: Colors.grey)),
-        Flexible(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textColor,
-            ),
-            textAlign: TextAlign.right,
-          ),
-        ),
-      ],
     );
   }
 }

@@ -18,7 +18,12 @@ class _WalletTopUpPageState extends State<WalletTopUpPage> {
   double? selectedAmount;
   PaymentMethod selectedPaymentMethod = PaymentMethod.phapayQR;
 
-  final List<double> presetAmounts = [20000, 50000, 100000, 200000, 500000];
+  final List<double> presetAmounts = [
+    1,
+    2,
+    3,
+    4,
+  ]; // Test amounts (no KYC required)
 
   @override
   void dispose() {
@@ -56,10 +61,14 @@ class _WalletTopUpPageState extends State<WalletTopUpPage> {
       return;
     }
 
-    if (selectedAmount! < 10000) {
+    // Note: Without KYC verification, maximum amount is 1000 Kip
+    // Using test amounts of 1-4 Kip for testing
+    if (selectedAmount! > 1000) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Minimum top-up amount is ₭10,000'),
+          content: Text(
+            'Maximum amount is ₭1,000 (KYC required for higher amounts)',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -104,6 +113,37 @@ class _WalletTopUpPageState extends State<WalletTopUpPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // KYC Info Banner
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.orange.shade700,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Test Mode: Max ₭1,000 (Complete KYC for higher amounts)',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Current Balance Card
             _buildBalanceCard(currentBalance),
             const SizedBox(height: 24),

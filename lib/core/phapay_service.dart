@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'services/phapay_api_service.dart';
+import 'models/phapay_bank.dart';
 
 /// Mock Phapay Payment Service
 /// In production, this would connect to actual Phapay API
@@ -8,8 +10,8 @@ class PhapayService {
   factory PhapayService() => _instance;
   PhapayService._internal();
 
-  // Mock wallet balance (in Lao Kip)
-  double _walletBalance = 150000;
+  // Mock wallet balance (in Lao Kip) - Test amount for non-KYC account
+  double _walletBalance = 10;
   double get walletBalance => _walletBalance;
 
   // Transaction history
@@ -20,37 +22,51 @@ class PhapayService {
   Future<PaymentResult> initiatePayment({
     required double amount,
     required PaymentMethod method,
+    String description = 'Wallet Top Up',
+    PhaPayBank? bank,
   }) async {
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 2));
+    // Create payment using PhaPay API
+    final apiService = PhapayApiService();
 
-    // Simulate 90% success rate
-    final random = Random();
-    final isSuccess = random.nextInt(10) < 9;
+    PaymentLinkResponse apiResponse;
 
-    if (isSuccess) {
-      // Add to wallet balance
-      _walletBalance += amount;
+    if (method == PaymentMethod.phapayQR) {
+      // Use bank-specific generation if bank is provided, otherwise default (other/IB)
+      apiResponse = await apiService.generateBankQr(
+        amount: amount,
+        description: description,
+        bank: bank ?? PhaPayBank.other,
+      );
+    } else {
+      // Legacy/Link method
+      apiResponse = await apiService.createPaymentLink(
+        amount: amount,
+        description: description,
+      );
+    }
 
-      // Create transaction record
+    if (apiResponse.success) {
+      // Create pending transaction record
       final transaction = Transaction(
         id: _generateTransactionId(),
         amount: amount,
         type: TransactionType.topUp,
         method: method,
-        status: TransactionStatus.success,
+        status: TransactionStatus.pending,
         timestamp: DateTime.now(),
-        reference: _generateReference(),
+        reference: apiResponse.orderNo,
       );
 
       _transactions.insert(0, transaction);
 
       return PaymentResult(
         success: true,
-        message:
-            'Payment successful! ₭${amount.toStringAsFixed(0)} added to wallet.',
+        message: 'QR Code generated successfully',
         transactionId: transaction.id,
         newBalance: _walletBalance,
+        paymentUrl: apiResponse.redirectURL, // This contains the QR data string
+        orderNo: apiResponse.orderNo,
+        isQrData: true, // Flag as QR data
       );
     } else {
       // Create failed transaction record
@@ -61,17 +77,44 @@ class PhapayService {
         method: method,
         status: TransactionStatus.failed,
         timestamp: DateTime.now(),
-        reference: _generateReference(),
+        reference: 'FAILED',
       );
 
       _transactions.insert(0, transaction);
 
       return PaymentResult(
         success: false,
-        message: 'Payment failed. Please try again.',
+        message: apiResponse.message,
         transactionId: transaction.id,
         newBalance: _walletBalance,
       );
+    }
+  }
+
+  /// Complete a payment (call this after successful payment callback)
+  void completePayment(String orderNo, double amount) {
+    // Find the pending transaction
+    final transactionIndex = _transactions.indexWhere(
+      (t) => t.reference == orderNo && t.status == TransactionStatus.pending,
+    );
+
+    if (transactionIndex != -1) {
+      // Update transaction status
+      final oldTransaction = _transactions[transactionIndex];
+      final updatedTransaction = Transaction(
+        id: oldTransaction.id,
+        amount: oldTransaction.amount,
+        type: oldTransaction.type,
+        method: oldTransaction.method,
+        status: TransactionStatus.success,
+        timestamp: oldTransaction.timestamp,
+        reference: oldTransaction.reference,
+      );
+
+      _transactions[transactionIndex] = updatedTransaction;
+
+      // Add to wallet balance
+      _walletBalance += amount;
     }
   }
 
@@ -193,11 +236,17 @@ class PaymentResult {
   final String message;
   final String transactionId;
   final double newBalance;
+  final String? paymentUrl;
+  final String? orderNo;
+  final bool isQrData;
 
   PaymentResult({
     required this.success,
     required this.message,
     required this.transactionId,
     required this.newBalance,
+    this.paymentUrl,
+    this.orderNo,
+    this.isQrData = false,
   });
 }
