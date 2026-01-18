@@ -3,6 +3,9 @@ import 'package:forui/forui.dart';
 import '../../app_color.dart'; // Adjust import based on depth
 import '../../core/services/launcher_service.dart';
 
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
 class MapPage extends StatelessWidget {
   const MapPage({super.key});
 
@@ -17,7 +20,7 @@ class MapPage extends StatelessWidget {
         "slots": 12,
         "price": 5000,
         "isAvailable": true,
-        "coordinates": const Offset(100, 150),
+        "coordinates": const LatLng(17.965, 102.615),
         "lat": 17.965,
         "long": 102.615,
       },
@@ -27,7 +30,7 @@ class MapPage extends StatelessWidget {
         "slots": 0,
         "price": 3000,
         "isAvailable": false,
-        "coordinates": const Offset(250, 300),
+        "coordinates": const LatLng(17.962, 102.608),
         "lat": 17.962,
         "long": 102.608,
       },
@@ -37,7 +40,7 @@ class MapPage extends StatelessWidget {
         "slots": 5,
         "price": 2000,
         "isAvailable": true,
-        "coordinates": const Offset(180, 220),
+        "coordinates": const LatLng(17.964, 102.609),
         "lat": 17.964,
         "long": 102.609,
       },
@@ -59,25 +62,29 @@ class MapPage extends StatelessWidget {
       ),
       body: Stack(
         children: [
-          // 1. Mock Map Background
-          Container(
-            color: Colors.grey.shade300,
-            child: Center(
-              child: Opacity(
-                opacity: 0.2,
-                child: Icon(FIcons.map, size: 200, color: Colors.grey.shade600),
-              ),
+          // 1. Real Map Implementation
+          FlutterMap(
+            options: const MapOptions(
+              initialCenter: LatLng(17.965, 102.615), // Vientiane, Laos
+              initialZoom: 15.0,
             ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.phajord',
+              ),
+              MarkerLayer(
+                markers: parkingSpots.map((spot) {
+                  return Marker(
+                    point: spot['coordinates'] as LatLng,
+                    width: 40,
+                    height: 40,
+                    child: _buildMapPin(spot),
+                  );
+                }).toList(),
+              ),
+            ],
           ),
-
-          // 2. Map Pins (Mock locations)
-          ...parkingSpots.map((spot) {
-            return Positioned(
-              left: (spot['coordinates'] as Offset).dx,
-              top: (spot['coordinates'] as Offset).dy,
-              child: _buildMapPin(spot),
-            );
-          }),
 
           // 3. Bottom List of Parking Spots
           Positioned(
@@ -108,25 +115,20 @@ class MapPage extends StatelessWidget {
 
   Widget _buildMapPin(Map<String, dynamic> spot) {
     bool isAvailable = spot['isAvailable'] as bool;
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: isAvailable ? Colors.green : Colors.red,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 6,
-                offset: const Offset(0, 3),
-              ),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        color: isAvailable ? Colors.green : Colors.red,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
-          child: Icon(FIcons.mapPin, color: Colors.white, size: 20),
-        ),
-      ],
+        ],
+      ),
+      child: Icon(FIcons.mapPin, color: Colors.white, size: 20),
     );
   }
 
