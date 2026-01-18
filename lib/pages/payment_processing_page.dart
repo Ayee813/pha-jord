@@ -3,7 +3,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../app_color.dart';
 import '../core/phapay_service.dart';
-import '../core/models/phapay_bank.dart';
+// import '../core/models/phapay_bank.dart'; // Unused
+
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../core/services/phapay_api_service.dart';
 
 class PaymentProcessingPage extends StatefulWidget {
   final double amount;
@@ -24,7 +27,9 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
   final PhapayService _phapayService = PhapayService();
   bool _isProcessing = false; // Start false to allow bank selection if needed
 
-  PhaPayBank? _selectedBank;
+  IO.Socket? socket;
+  static const String _socketUrl = 'https://portal.phajay.co';
+
   PaymentResult? _result;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -40,25 +45,73 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
       CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
     );
 
-    // If not PhaPay QR, process immediately. If PhaPay QR, wait for bank selection.
-    if (widget.paymentMethod != PaymentMethod.phapayQR) {
-      _isProcessing = true;
-      _processPayment();
+    // Initialize Socket Connection
+    _connectSocket();
+
+    // Always process immediately
+    _isProcessing = true;
+    _processPayment();
+  }
+
+  void _connectSocket() {
+    final apiKey = PhapayApiService.apiKey;
+    final socketUri = '$_socketUrl/?key=$apiKey';
+
+    print('🔌 Connecting to Socket: $socketUri');
+
+    socket = IO.io(
+      _socketUrl,
+      IO.OptionBuilder()
+          .setTransports(['polling', 'websocket']) // Allow polling first
+          .setQuery({'key': apiKey})
+          .build(),
+    );
+
+    socket!.onConnect((_) {
+      print('✅ Socket Connected');
+    });
+
+    socket!.onConnectError((data) => print('❌ Socket Error: $data'));
+
+    // Listen for payment success event using the API Key pattern from docs
+    final eventName = 'join::$apiKey';
+    print('👂 Listening for event: $eventName');
+
+    socket!.on(eventName, (data) {
+      print("📩 Received Socket Data: $data");
+      if (data != null && mounted) {
+        _handlePaymentSuccess(data);
+      }
+    });
+  }
+
+  void _handlePaymentSuccess(dynamic data) {
+    print('🎉 Payment Successfully Confirmed via Socket!');
+
+    // You might want to parse 'data' to verify orderNo, but for now assuming success
+    // Update local wallet balance (mock)
+    _phapayService.completePayment(_result?.orderNo ?? '', widget.amount);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment Successful!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Close the page and return to wallet
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
+    socket?.disconnect();
+    socket?.dispose();
     super.dispose();
-  }
-
-  void _onBankSelected(PhaPayBank bank) {
-    setState(() {
-      _selectedBank = bank;
-      _isProcessing = true;
-    });
-    _processPayment();
   }
 
   Future<void> _processPayment() async {
@@ -70,7 +123,6 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
       amount: widget.amount,
       method: widget.paymentMethod,
       description: 'Wallet Top Up - ₭${widget.amount.toStringAsFixed(0)}',
-      bank: _selectedBank,
     );
 
     setState(() {
@@ -79,12 +131,10 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
     });
 
     if (result.success && result.paymentUrl != null) {
-      if (result.isQrData) {
-        // Show QR code in-app
-        print('✅ QR Code generated successfully: ${result.paymentUrl}');
-        _animationController.forward();
-      } else {
-        // Fallback: Launch payment URL in browser (old method)
+      final isUrl = result.paymentUrl!.startsWith('http');
+
+      if (isUrl) {
+        // Force Launch payment URL in browser
         try {
           final uri = Uri.parse(result.paymentUrl!);
           print('🚀 Launching Payment URL: $uri');
@@ -97,38 +147,49 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
           if (launched) {
             print('✅ Payment URL launched successfully');
             _animationController.forward();
-            await Future.delayed(const Duration(seconds: 3));
+
+            // Keep the page open to listen for socket, but show message
             if (mounted) {
-              Navigator.of(context).popUntil((route) => route.isFirst);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Payment page opened in browser. Please complete payment there.',
+                  ),
+                  backgroundColor: Colors.blue,
+                  duration: Duration(seconds: 4),
+                ),
+              );
             }
           } else {
             print('⚠️ Failed to launch payment URL');
-            setState(() {
-              _result = PaymentResult(
-                success: false,
-                message: 'Cannot open payment link in browser',
-                transactionId: result.transactionId,
-                newBalance: result.newBalance,
-              );
-            });
-            _animationController.forward();
+            _handleLaunchError(result);
           }
         } catch (e) {
-          setState(() {
-            _result = PaymentResult(
-              success: false,
-              message: 'Error opening payment link: ${e.toString()}',
-              transactionId: result.transactionId,
-              newBalance: result.newBalance,
-            );
-          });
-          _animationController.forward();
+          _handleLaunchError(result, error: e.toString());
         }
+      } else if (result.isQrData) {
+        // Show QR code in-app
+        print('✅ QR Code generated successfully: ${result.paymentUrl}');
+        _animationController.forward();
       }
     } else {
       // Payment failed
       _animationController.forward();
     }
+  }
+
+  void _handleLaunchError(PaymentResult result, {String? error}) {
+    setState(() {
+      _result = PaymentResult(
+        success: false,
+        message: error != null
+            ? 'Error: $error'
+            : 'Cannot open payment link in browser',
+        transactionId: result.transactionId,
+        newBalance: result.newBalance,
+      );
+    });
+    _animationController.forward();
   }
 
   @override
@@ -158,71 +219,8 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage>
               ? _buildProcessingView()
               : (_result != null
                     ? _buildResultView()
-                    : _buildBankSelectionView()),
+                    : const SizedBox.shrink()),
         ),
-      ),
-    );
-  }
-
-  Widget _buildBankSelectionView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Select Bank Processing',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textColor,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Choose your preferred banking app',
-          style: TextStyle(fontSize: 14, color: Colors.grey),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 32),
-        _buildBankButton(PhaPayBank.bcel, Colors.red[700]!),
-        const SizedBox(height: 16),
-        _buildBankButton(PhaPayBank.jdb, Colors.blue[800]!),
-        const SizedBox(height: 16),
-        _buildBankButton(PhaPayBank.ldb, Colors.green[700]!),
-        const SizedBox(height: 16),
-        _buildBankButton(PhaPayBank.other, Colors.orange[700]!),
-      ],
-    );
-  }
-
-  Widget _buildBankButton(PhaPayBank bank, Color color) {
-    return ElevatedButton(
-      onPressed: () => _onBankSelected(bank),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: color, // Text/Icon color
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: color, width: 2),
-        ),
-        elevation: 0,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // You could add an Image.asset here if you had icons
-          // Image.asset(bank.logoAsset, width: 30, height: 30),
-          // const SizedBox(width: 12),
-          Text(
-            bank.displayName,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
       ),
     );
   }

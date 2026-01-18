@@ -337,7 +337,7 @@ class _WalletTopUpPageState extends State<WalletTopUpPage> {
 
   Widget _buildPaymentMethods() {
     return Column(
-      children: PaymentMethod.values.map((method) {
+      children: [PaymentMethod.phapayQR].map((method) {
         final isSelected = selectedPaymentMethod == method;
         return GestureDetector(
           onTap: () {

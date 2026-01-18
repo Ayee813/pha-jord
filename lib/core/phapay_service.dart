@@ -30,15 +30,15 @@ class PhapayService {
 
     PaymentLinkResponse apiResponse;
 
-    if (method == PaymentMethod.phapayQR) {
-      // Use bank-specific generation if bank is provided, otherwise default (other/IB)
-      apiResponse = await apiService.generateBankQr(
+    if (method == PaymentMethod.phapayQR && bank != null) {
+      // Use bank-specific generation ONLY if a specific bank is explicitly requested (legacy flow)
+      // converting to createPaymentLink for general Phapay QR usage as requested
+      apiResponse = await apiService.createPaymentLink(
         amount: amount,
         description: description,
-        bank: bank ?? PhaPayBank.other,
       );
     } else {
-      // Legacy/Link method
+      // Default / Link method
       apiResponse = await apiService.createPaymentLink(
         amount: amount,
         description: description,

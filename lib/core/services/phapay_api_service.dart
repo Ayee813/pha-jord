@@ -14,6 +14,8 @@ class PhapayApiService {
   static const String _shopId = 'PHAJORD_APP';
   static const String _shopName = 'Pha Jord';
 
+  static String get apiKey => _apiKey;
+
   /// Create a payment link for the specified amount
   /// Returns the payment link URL or throws an exception
   Future<PaymentLinkResponse> createPaymentLink({
